@@ -32,11 +32,12 @@ import (
 	"bytes"
 	"unicode/utf8"
 	"fmt"
+	"errors"
 )
 
 var addrFlag, cmdFlag, staticFlag string
 
-type Message struct {
+type WebSocketMessage struct {
 	Type string `json:"type"`
 	Data json.RawMessage `json:"data"`
 }
@@ -91,7 +92,7 @@ func receiveInput(ptyFile *os.File, conn *websocket.Conn, done chan bool) {
 				return
 			}
 		}
-		var msg Message;
+		var msg WebSocketMessage;
 		switch mt {
 		case websocket.BinaryMessage:
 			log.Printf("Ignoring binary message: %q\n", payload)
@@ -100,29 +101,10 @@ func receiveInput(ptyFile *os.File, conn *websocket.Conn, done chan bool) {
 			if err != nil {
 				log.Printf("Invalid message %s\n", err);
 				done <- true
-				continue
+				return
 			}
-			switch msg.Type{
-			case "resize" :
-				var size []float64;
-				err := json.Unmarshal(msg.Data, &size)
-				if err != nil {
-					log.Printf("Invalid resize message: %s\n", err);
-				} else {
-					pty.Setsize(ptyFile, uint16(size[1]), uint16(size[0]));
-				}
-
-			case "data" :
-				var dat string;
-				err := json.Unmarshal(msg.Data, &dat);
-				if err != nil {
-					log.Printf("Invalid data message %s\n", err);
-				} else {
-					ptyFile.Write([]byte(dat));
-				}
-
-			default:
-				log.Printf("Invalid message type %d\n", mt)
+			if errMsg := handleMessage(msg, ptyFile); errMsg != nil {
+				log.Printf(errMsg.Error())
 				done <- true
 				return
 			}
@@ -133,7 +115,33 @@ func receiveInput(ptyFile *os.File, conn *websocket.Conn, done chan bool) {
 			return
 		}
 	}
+}
 
+func handleMessage(msg WebSocketMessage, ptyFile *os.File) error {
+	switch msg.Type {
+	case "resize" :
+		var size []float64;
+		err := json.Unmarshal(msg.Data, &size)
+		if err != nil {
+			log.Printf("Invalid resize message: %s\n", err);
+		} else {
+			pty.Setsize(ptyFile, uint16(size[1]), uint16(size[0]));
+		}
+
+	case "data" :
+		var dat string;
+		err := json.Unmarshal(msg.Data, &dat);
+		if err != nil {
+			log.Printf("Invalid data message %s\n", err);
+		} else {
+			ptyFile.Write([]byte(dat));
+		}
+
+	default:
+		return errors.New("Invalid field message type " + msg.Type + "\n")
+	}
+
+	return nil
 }
 
 // copy everything from the pty master to the websocket
@@ -182,7 +190,6 @@ func sendOutput(ptyFile *os.File, conn *websocket.Conn, done chan bool) {
 		if i < n {
 			buffer.Write(buf[i:n])
 		}
-
 	}
 }
 
@@ -204,7 +211,7 @@ func ptyHandler(w http.ResponseWriter, r *http.Request) {
 	go receiveInput(wp.Pty, conn, done)
 
 	fmt.Println("and")
-	<- done
+	<-done
 	fmt.Println("close")
 	wp.Stop()
 	conn.Close()
