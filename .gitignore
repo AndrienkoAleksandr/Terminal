@@ -30,6 +30,7 @@
 
 # IntelliJ
 /out/
+.idea/shelf/
 
 # mpeltonen/sbt-idea plugin
 .idea_modules/
@@ -42,3 +43,6 @@ com_crashlytics_export_strings.xml
 crashlytics.properties
 crashlytics-build.properties
 fabric.properties
+.idea/goLibraries.xml
+.idea/misc.xml
+Terminal.iml
